@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scr:component xmlns:scr="http://www.osgi.org/xmlns/scr/v1.1.0" name="de.bxservice.datev.acct.DocFactory">
+   <service>
+      <provide interface="org.adempiere.base.IDocFactory"/>
+   </service>
+   <implementation class="de.bxservice.datev.acct.DocFactory"/>
+   <property name="service.ranking" type="Integer" value="10"/>
+   <property name="gaap" type="String" value="XD"/>
+</scr:component>
