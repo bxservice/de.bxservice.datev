@@ -27,11 +27,18 @@ package de.bxservice.datev.acct;
 
 import java.math.BigDecimal;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 
-import org.compiere.acct.Doc_GLJournal;
+import org.compiere.acct.Doc;
 import org.compiere.acct.Fact;
 import org.compiere.model.MAcctSchema;
+import org.compiere.model.MInventory;
+import org.compiere.model.MMovement;
+import org.compiere.model.MProduction;
+import org.compiere.model.MProjectIssue;
+import org.compiere.model.MRequisition;
+import org.compiere.model.PO;
 import org.compiere.util.Env;
 
 /**
@@ -39,16 +46,30 @@ import org.compiere.util.Env;
  * @author Carlos Ruiz - globalqss - bxservice
  *
  */
-public class Doc_NoAcct extends Doc_GLJournal {
+public class Doc_NoAcct extends Doc {
 
 	/**
 	 * Constructor
 	 * @param as      accounting schema
 	 * @param rs      record
 	 * @param trxName trx
+	 * @param classPO 
+	 * @param docType 
 	 */
-	public Doc_NoAcct(MAcctSchema as, ResultSet rs, String trxName) {
-		super(as, rs, trxName);
+	public Doc_NoAcct(MAcctSchema as, ResultSet rs, String trxName, Class<?> classPO, String docType) {
+		super(as, classPO, rs, docType, trxName);
+		PO po = getPO();
+		switch (po.get_TableName()) {
+		case MInventory.Table_Name:
+		case MMovement.Table_Name:
+		case MProduction.Table_Name:
+		case MProjectIssue.Table_Name:
+			setDateAcct((Timestamp) po.get_Value("MovementDate"));
+			break;
+		case MRequisition.Table_Name:
+			setDateAcct((Timestamp) po.get_Value("DateDoc"));
+			break;
+		}
 	}
 
 	/**
