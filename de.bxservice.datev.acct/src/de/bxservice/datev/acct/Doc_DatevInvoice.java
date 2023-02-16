@@ -144,35 +144,29 @@ public class Doc_DatevInvoice extends Doc_Invoice {
 				charge = docLine.getChargeAccount(as, null);
 			}
 
-			BigDecimal drAmt = null;
-			BigDecimal crAmt = null;
 			MAccount drAccount = null;
 			MAccount crAccount = null;
 			if (isSOTrx) {
 				if (isCreditNote) {
 					drAccount = (revenue != null ? revenue : charge);
 					crAccount = MAccount.get(getCtx(), receivables_ID);
-					crAmt = amt;
 				} else {
 					drAccount = MAccount.get(getCtx(), receivables_ID);
-					drAmt = amt;
 					crAccount = (revenue != null ? revenue : charge);
 				}
 			} else {
 				if (isCreditNote) {
 					drAccount = MAccount.get(getCtx(), payables_ID);
-					crAmt = amt;
 					crAccount = (expense != null ? expense : charge);
 				} else {
 					drAccount = (expense != null ? expense : charge);
 					crAccount = MAccount.get(getCtx(), payables_ID);
-					drAmt = amt;
 				}
 			}
 
 			if (drAccount != null && crAccount != null) {
-				createLine(fact, docLine, drAccount, currency_ID, drAmt, crAmt, null); // create debit line
-				createLine(fact, docLine, crAccount, currency_ID, crAmt, drAmt, null); // create credit line
+				createLine(fact, docLine, drAccount, currency_ID, amt, null, null); // create debit line
+				createLine(fact, docLine, crAccount, currency_ID, null, amt, null); // create credit line
 			} else {
 				p_Error = "Could not find accounts for posting";
 				log.log(Level.SEVERE, p_Error);
