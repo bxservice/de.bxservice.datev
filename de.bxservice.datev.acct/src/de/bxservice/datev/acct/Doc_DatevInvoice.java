@@ -27,9 +27,11 @@ package de.bxservice.datev.acct;
 
 import java.math.BigDecimal;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.logging.Level;
 
+import org.adempiere.exceptions.AdempiereException;
 import org.compiere.acct.Doc;
 import org.compiere.acct.DocLine;
 import org.compiere.acct.Doc_Invoice;
@@ -37,7 +39,14 @@ import org.compiere.acct.Fact;
 import org.compiere.acct.FactLine;
 import org.compiere.model.MAccount;
 import org.compiere.model.MAcctSchema;
+import org.compiere.model.MAcctSchemaElement;
+import org.compiere.model.MBPartnerLocation;
+import org.compiere.model.MClientInfo;
+import org.compiere.model.MInvoice;
+import org.compiere.model.MInvoiceLine;
+import org.compiere.model.MLocation;
 import org.compiere.model.ProductCost;
+import org.compiere.util.DB;
 import org.compiere.util.Util;
 
 /**
@@ -46,6 +55,15 @@ import org.compiere.util.Util;
  *
  */
 public class Doc_DatevInvoice extends Doc_Invoice {
+
+	private static final int COUNTRY_GERMANY = 101;
+	private static final String COUNTRY_GROUP_EU = "e2d931e1-cb48-488a-bbb6-b6af006d9388";
+	private static final String ACCT_PO_GERMANY = "3400";
+	private static final String ACCT_PO_INTRA_EU = "3425";
+	private static final String ACCT_PO_EXTRA_EU = "3200";
+	private static final String ACCT_SO_GERMANY = "8400";
+	private static final String ACCT_SO_INTRA_EU = "8125";
+	private static final String ACCT_SO_EXTRA_EU = "8120";
 
 	/**
 	 * Constructor
@@ -126,8 +144,10 @@ public class Doc_DatevInvoice extends Doc_Invoice {
 
 		for (DocLine docLine : p_lines) {
 
-			// Amount
-			BigDecimal amt = docLine.getAmtSource();
+			MInvoiceLine il = (MInvoiceLine) docLine.getPO();
+			// docLine.getAmtSource() is without tax, we need it including tax
+			// WARNING: This must work just for taxes that are non-summary
+			BigDecimal amt = il.getLineTotalAmt();
 			if (amt.signum() == 0)
 				continue;
 
@@ -198,8 +218,81 @@ public class Doc_DatevInvoice extends Doc_Invoice {
 			factLine.setLocationFromBPartner(getC_BPartner_Location_ID(), false); // to Loc
 			if (Util.isEmpty(description))
 				factLine.setDescription(description);
+			changeAccountBasedOnCountryGroup(factLine, docLine);
 		}
 		return factLine;
+	}
+
+	private void changeAccountBasedOnCountryGroup(FactLine factLine, DocLine docLine) {
+		// Change accounts
+		//   PURCHASING accounting / Export:
+		//     Germany - 3400
+		//     Intra EU - 3425
+		//     Extra EU - 3200
+		//   SALES accounting / Import:
+		//     Germany - 8400
+		//     Intra EU - 8125
+		//     Extra EU - 8120
+		MInvoiceLine il = (MInvoiceLine) docLine.getPO();
+		MInvoice i = il.getParent();
+		MBPartnerLocation bpl = new MBPartnerLocation(getCtx(), i.getC_BPartner_Location_ID(), getTrxName());
+		MLocation loc = MLocation.get(bpl.getC_Location_ID());
+		int countryId = loc.getC_Country_ID();
+		if (countryId == COUNTRY_GERMANY)
+			return;
+		boolean isEU = countryGroupContains(COUNTRY_GROUP_EU, countryId, getDateDoc());
+		if (i.isSOTrx()) {
+			// Sales
+			int germanyId = getAcctId(ACCT_SO_GERMANY);
+			if (factLine.getAccount_ID() == germanyId) {
+				if (isEU) {
+					int intraEUId = getAcctId(ACCT_SO_INTRA_EU);
+					factLine.setAccount_ID(intraEUId);
+				} else {
+					int extraEUId = getAcctId(ACCT_SO_EXTRA_EU);
+					factLine.setAccount_ID(extraEUId);
+				}
+			}
+		} else {
+			// Purchase
+			int germanyId = getAcctId(ACCT_PO_GERMANY);
+			if (factLine.getAccount_ID() == germanyId) {
+				if (isEU) {
+					int intraEUId = getAcctId(ACCT_PO_INTRA_EU);
+					factLine.setAccount_ID(intraEUId);
+				} else {
+					int extraEUId = getAcctId(ACCT_PO_EXTRA_EU);
+					factLine.setAccount_ID(extraEUId);
+				}
+			}
+		}
+	}
+
+	private int getAcctId(String acctValue) {
+		MClientInfo clientInfo = MClientInfo.get(getCtx());
+		MAcctSchema primary = clientInfo.getMAcctSchema1();
+		MAcctSchemaElement ele = primary.getAcctSchemaElement(MAcctSchemaElement.ELEMENTTYPE_Account);
+		final String sql = ""
+				+ "SELECT C_ElementValue_ID "
+				+ "FROM C_ElementValue "
+				+ "WHERE Value = ? AND IsActive = 'Y' AND C_Element_ID = ?";
+		int acctId = DB.getSQLValueEx(getTrxName(), sql, acctValue, ele.getC_Element_ID());
+		if (acctId <= 0)
+			throw new AdempiereException("Could not find Account (C_ElementValue) with code " + acctValue);
+		return acctId;
+	}
+
+	private static boolean countryGroupContains(String countryGroupUU, int countryID, Timestamp dateDoc) {
+		final String sql = ""
+				+ "SELECT COUNT(*) "
+				+ "FROM   C_CountryGroup cg "
+				+ "JOIN C_CountryGroupCountry cgc ON (cg.C_CountryGroup_ID=cgc.C_CountryGroup_ID) "
+				+ "WHERE  cgc.C_Country_ID = ? "
+				+ "       AND C_CountryGroup_UU = ? "
+				+ "       AND cgc.IsActive = 'Y' "
+				+ "       AND (cgc.DateTo IS NULL OR cgc.DateTo <= ?)";
+		int cnt = DB.getSQLValue(null, sql, countryID, countryGroupUU, dateDoc);
+		return cnt > 0;
 	}
 
 }
