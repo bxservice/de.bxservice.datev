@@ -29,6 +29,7 @@ import java.sql.ResultSet;
 
 import org.adempiere.base.IDocFactory;
 import org.compiere.acct.Doc;
+import org.compiere.acct.Doc_GLJournal;
 import org.compiere.model.MAcctSchema;
 import org.compiere.model.MAllocationHdr;
 import org.compiere.model.MAssetAddition;
@@ -40,9 +41,11 @@ import org.compiere.model.MCash;
 import org.compiere.model.MDocType;
 import org.compiere.model.MInventory;
 import org.compiere.model.MInvoice;
+import org.compiere.model.MJournal;
 import org.compiere.model.MMatchInv;
 import org.compiere.model.MMatchPO;
 import org.compiere.model.MMovement;
+import org.compiere.model.MPayment;
 import org.compiere.model.MProduction;
 import org.compiere.model.MProjectIssue;
 import org.compiere.model.MRequisition;
@@ -65,6 +68,10 @@ public class DocFactory implements IDocFactory {
 				doc = new Doc_DatevInvoice(as, rs, trxName);
 			} else if (MAllocationHdr.Table_ID == tableId) {
 				doc = new Doc_DatevAllocationHdr(as, rs, trxName);
+			} else if (MPayment.Table_ID == tableId) {
+				doc = new Doc_DatevPayment(as, rs, trxName);
+			} else if (MJournal.Table_ID == tableId) {
+				doc = new Doc_GLJournal(as, rs, trxName);
 			} else {
 				MTable table = MTable.get(tableId);
 				Class<?> classPO = MTable.getClass(table.getTableName());

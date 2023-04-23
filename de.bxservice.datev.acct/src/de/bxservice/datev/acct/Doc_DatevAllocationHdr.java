@@ -38,11 +38,10 @@ import org.compiere.acct.Fact;
 import org.compiere.acct.FactLine;
 import org.compiere.model.MAccount;
 import org.compiere.model.MAcctSchema;
+import org.compiere.model.MBPartnerLocation;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MPayment;
 import org.compiere.util.DB;
-import org.compiere.util.Env;
-import org.compiere.util.Util;
 
 /**
  *
@@ -66,12 +65,22 @@ public class Doc_DatevAllocationHdr extends Doc_AllocationHdr {
 	 *  Create Facts (the accounting logic) for
 	 *  CMA.
 	 *  <pre>
-	 *  AR_Invoice_Payment
-	 *      Receivables     DR     (discount and writeoff in CR)
-	 *      Bank Account            CR
-	 *  AP_Invoice_Payment
-	 *      Payables        DR     (discount and writeoff in CR)
-	 *      Bank Account            CR
+	 *  Record sales invoice
+	 *  	PayDiscount_Exp_Acct (discount and write-off)
+	 *  		C_Receivable_Acct
+	 *  
+	 *  Record purchase invoice
+	 *  		PayDiscount_Rev_Acct (discount and write-off)
+	 *  	V_Liability_Acct
+	 *  
+	 *  Record sales payment
+	 *  	B_Asset_Acct
+	 *  
+	 *  Record purchase payment
+			 *  B_Asset_Acct
+	 *  
+	 *  Record charge
+	 *  	CH_Expense_Acct (where it goes depends on the sign)
 	 *  </pre>
 	 * @param as account schema
 	 * @return Facts empty array - no accounting
@@ -92,64 +101,61 @@ public class Doc_DatevAllocationHdr extends Doc_AllocationHdr {
 			}
 
 			line = (DocLine_Allocation) lineraw;
-			if (line.getC_Payment_ID() <= 0 || line.getC_Invoice_ID() <= 0)
-				continue;
-
 			setC_BPartner_ID(line.getC_BPartner_ID());
+			int currency_ID = getC_Currency_ID();
 
-			//	Receivables/Liability Amt
-			BigDecimal discountPlusWriteOff = line.getDiscountAmt().add(line.getWriteOffAmt());
-			BigDecimal allocationSource = line.getAmtSource().add(discountPlusWriteOff);
-
-			MPayment payment = new MPayment (getCtx(), line.getC_Payment_ID(), getTrxName());
-			MInvoice invoice = new MInvoice (getCtx(), line.getC_Invoice_ID(), getTrxName());
-
-			setC_BankAccount_ID(payment.getC_BankAccount_ID());
-			MAccount acct_bank = getAccount(ACCTTYPE_BankAsset, as);
-
-			// get first tax from the invoice
-			int taxId = DB.getSQLValue(getTrxName(), "SELECT MIN(C_Tax_ID) FROM C_InvoiceLine WHERE C_Invoice_ID=? AND QtyInvoiced!=0 AND IsActive='Y'", invoice.getC_Invoice_ID());
-
-			if (invoice.isSOTrx()) {
-				//	Sales Invoice
-				MAccount acct_receivable = getAccount(Doc.ACCTTYPE_C_Receivable, as);
-				createLine(fact, line, acct_receivable, getC_Currency_ID(), allocationSource, discountPlusWriteOff, null, taxId);
-				createLine(fact, line, acct_bank, getC_Currency_ID(), null, line.getAmtSource(), null, taxId);
-			} else {
-				//	Purchase Invoice
-				MAccount acct_liability = getAccount(Doc.ACCTTYPE_V_Liability, as);
-				createLine(fact, line, acct_liability, getC_Currency_ID(), allocationSource.negate(), discountPlusWriteOff.negate(), null, taxId);
-				createLine(fact, line, acct_bank, getC_Currency_ID(), null, line.getAmtSource().negate(), null, taxId);
+			MInvoice invoice = null;
+			int taxId = -1;
+			if (line.getC_Invoice_ID() > 0) {
+				// Invoice posting
+				invoice = new MInvoice (getCtx(), line.getC_Invoice_ID(), getTrxName());
+				// TODO: multi-tax invoices are not supported
+				// get first tax from the invoice
+				taxId = DB.getSQLValue(getTrxName(), "SELECT MIN(C_Tax_ID) FROM C_InvoiceLine WHERE C_Invoice_ID=? AND QtyInvoiced!=0 AND IsActive='Y'", invoice.getC_Invoice_ID());
+				MAccount bpAccount = null;
+				if (invoice.isSOTrx())
+					bpAccount = getAccount(Doc.ACCTTYPE_C_Receivable, as);
+				else
+					bpAccount = getAccount(Doc.ACCTTYPE_V_Liability, as);
+				BigDecimal amt = line.getAmtSource().add(line.getDiscountAmt()).add(line.getWriteOffAmt());
+				DatevHelper.createLine(fact, this, lineraw, bpAccount, currency_ID, amt.negate(), null, taxId, DatevHelper.ELEMENT_VALUE_AllocationBPRevenueLiability); // create BP AR/AP line
 			}
+			if (line.getC_Payment_ID() > 0) {
+				// Payment posting
+				MPayment payment = new MPayment (getCtx(), line.getC_Payment_ID(), getTrxName());
+				setC_BankAccount_ID(payment.getC_BankAccount_ID());
+				MAccount acct_bank = getAccount(ACCTTYPE_BankAsset, as);
+				BigDecimal amt = line.getAmtSource();
+				FactLine fl = DatevHelper.createLine(fact, this, lineraw, acct_bank, currency_ID, amt, null, taxId, DatevHelper.ELEMENT_VALUE_AllocationPaymentBank); // create payment line
+				if (fl != null && invoice != null) {
+					MBPartnerLocation bpl = new MBPartnerLocation(getCtx(), invoice.getC_BPartner_Location_ID(), getTrxName());
+					fl.setUser1_ID(DatevHelper.getDATEVRegionFromLocation(bpl.getC_Location_ID(), invoice.getDateAcct()));
+					fl.setUserElement1_ID(invoice.getC_Invoice_ID());
+				}
+			}
+			if (line.getDiscountAmt().signum() != 0 || line.getWriteOffAmt().signum() != 0) {
+				// Discount/WriteOff posting
+				BigDecimal discountPlusWriteOff = line.getDiscountAmt().add(line.getWriteOffAmt());
+				MAccount discAcct = getAccount(Doc.ACCTTYPE_DiscountExp, as);
+				FactLine fl = DatevHelper.createLine(fact, this, lineraw, discAcct, currency_ID, discountPlusWriteOff, null, taxId, DatevHelper.ELEMENT_VALUE_AllocationDiscountWriteOff); // create discount line
+				if (fl != null && invoice != null) {
+					MBPartnerLocation bpl = new MBPartnerLocation(getCtx(), invoice.getC_BPartner_Location_ID(), getTrxName());
+					fl.setUser1_ID(DatevHelper.getDATEVRegionFromLocation(bpl.getC_Location_ID(), invoice.getDateAcct()));
+					fl.setUserElement1_ID(invoice.getC_Invoice_ID());
+				}
+			}
+			if (line.getC_Charge_ID() > 0) {
+				// Charge posting
+				MAccount chargeAcct = line.getChargeAccount(as, line.getAmtSource());
+				BigDecimal amt = line.getAmtSource();
+				DatevHelper.createLine(fact, this, lineraw, chargeAcct, currency_ID, amt, null, -1, DatevHelper.ELEMENT_VALUE_AllocationCharge); // create charge line
+			}
+
 		}	//	for all lines
 
 		facts.add(fact);
 		return facts;
 
-	}
-
-	/**
-	 * Create a line in the fact with the information provided
-	 * @param fact
-	 * @param docLine
-	 * @param drAccount
-	 * @param currency_ID
-	 * @param dr
-	 * @param cr
-	 * @param description
- 	 * @param taxID
-	 */
-	private FactLine createLine(Fact fact, DocLine docLine, MAccount account, int currency_ID, BigDecimal dr, BigDecimal cr, String description, int taxID) {
-		FactLine factLine = fact.createLine(docLine, account, currency_ID, dr, cr);
-		if (factLine != null) {
-			factLine.setQty(Env.ZERO);
-			factLine.setC_Tax_ID(taxID);
-			factLine.setLocationFromOrg(factLine.getAD_Org_ID(), true); // from Loc
-			factLine.setLocationFromBPartner(getC_BPartner_Location_ID(), false); // to Loc
-			if (Util.isEmpty(description))
-				factLine.setDescription(description);
-		}
-		return factLine;
 	}
 
 }
