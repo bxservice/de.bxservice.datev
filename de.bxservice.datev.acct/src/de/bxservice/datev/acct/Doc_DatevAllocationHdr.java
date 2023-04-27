@@ -118,7 +118,12 @@ public class Doc_DatevAllocationHdr extends Doc_AllocationHdr {
 				else
 					bpAccount = getAccount(Doc.ACCTTYPE_V_Liability, as);
 				BigDecimal amt = line.getAmtSource().add(line.getDiscountAmt()).add(line.getWriteOffAmt());
-				DatevHelper.createLine(fact, this, lineraw, bpAccount, currency_ID, amt.negate(), null, taxId, DatevHelper.ELEMENT_VALUE_AllocationBPRevenueLiability); // create BP AR/AP line
+				FactLine fl = DatevHelper.createLine(fact, this, lineraw, bpAccount, currency_ID, amt.negate(), null, taxId, DatevHelper.ELEMENT_VALUE_AllocationBPRevenueLiability); // create BP AR/AP line
+				if (fl != null) {
+					MBPartnerLocation bpl = new MBPartnerLocation(getCtx(), invoice.getC_BPartner_Location_ID(), getTrxName());
+					fl.setUser1_ID(DatevHelper.getDATEVRegionFromLocation(bpl.getC_Location_ID(), invoice.getDateAcct()));
+					fl.setUserElement1_ID(invoice.getC_Invoice_ID());
+				}
 			}
 			if (line.getC_Payment_ID() > 0) {
 				// Payment posting
