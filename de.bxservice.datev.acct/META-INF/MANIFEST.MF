@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: BXService DATEV Accounting
 Bundle-SymbolicName: de.bxservice.datev.acct;singleton:=true
-Bundle-Version: 1.0.9.qualifier
+Bundle-Version: 1.0.10.qualifier
 Automatic-Module-Name: de.bxservice.datev.acct
 Bundle-RequiredExecutionEnvironment: JavaSE-11
 Require-Bundle: org.adempiere.base;bundle-version="8.2.0",
