@@ -31,7 +31,10 @@
 package de.bxservice.datev.process;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 
 import org.compiere.model.MProcessPara;
 import org.compiere.model.MQuery;
@@ -77,7 +80,12 @@ public class DATEV_SSV_Export extends SvrProcess{
 		info.setDescription(query.getInfo());
 		ReportEngine re = new ReportEngine (Env.getCtx(), pf, query, info, get_TrxName());
 
-		File file = File.createTempFile("RV_BX_DATEV", ".csv");
+		String datumTo = new SimpleDateFormat("yyyy-MM-dd").format(p_BX_DATEV_Datum_To);
+		Path tmpFolder = Files.createTempDirectory("DATEV");
+		StringBuilder tmpFile = new StringBuilder()
+			.append(tmpFolder.toAbsolutePath().toString()).append(File.separator)
+			.append("RV_BX_DATEV_").append(datumTo).append(".csv");
+		File file = new File(tmpFile.toString());
 		re.createCSV(file, ';', re.getPrintFormat().getLanguage());
 		if (processUI != null) {
 			processUI.download(file);
