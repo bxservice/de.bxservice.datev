@@ -187,9 +187,15 @@ public class DatevHelper {
 				|| bxDatevType == ELEMENT_VALUE_InvoiceTaxDueCredit) {
 				MInvoice invoice = (MInvoice) doc.getPO();
 				MOrder order = invoice.getOriginalOrder();
-				if (order != null && order.isDropShip() && order.getDropShip_Location_ID() > 0) {
-					// set the BP Location according to the drop ship location
-					cbpl = order.getDropShip_Location_ID();
+				if (order != null && order.isDropShip()) {
+					if (order.getDropShip_BPartner_ID() > 0) {
+						doc.setC_BPartner_ID(order.getDropShip_BPartner_ID());
+						factLine.setC_BPartner_ID(order.getDropShip_BPartner_ID());
+					}
+					if (order.getDropShip_Location_ID() > 0) {
+						// set the BP Location according to the drop ship location
+						cbpl = order.getDropShip_Location_ID();
+					}						
 				}
 			}
 
