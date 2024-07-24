@@ -33,7 +33,9 @@ import org.compiere.acct.DocLine;
 import org.compiere.acct.Fact;
 import org.compiere.acct.FactLine;
 import org.compiere.model.MAccount;
+import org.compiere.model.MInvoice;
 import org.compiere.model.MLocation;
+import org.compiere.model.MOrder;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -177,7 +179,21 @@ public class DatevHelper {
 				factLine.setQty(Env.ZERO);
 			factLine.setC_Tax_ID(taxID);
 			factLine.setLocationFromOrg(factLine.getAD_Org_ID(), doc.isSOTrx());
-			factLine.setLocationFromBPartner(doc.getC_BPartner_Location_ID(), !doc.isSOTrx());
+
+			// for drop ship orders set the location based on the drop ship location of the order
+			int cbpl = doc.getC_BPartner_Location_ID();
+			if (   bxDatevType == ELEMENT_VALUE_InvoiceBPReceivableLiability
+				|| bxDatevType == ELEMENT_VALUE_InvoiceProductChargeRevenueExpense
+				|| bxDatevType == ELEMENT_VALUE_InvoiceTaxDueCredit) {
+				MInvoice invoice = (MInvoice) doc.getPO();
+				MOrder order = invoice.getOriginalOrder();
+				if (order != null && order.isDropShip() && order.getDropShip_Location_ID() > 0) {
+					// set the BP Location according to the drop ship location
+					cbpl = order.getDropShip_Location_ID();
+				}
+			}
+
+			factLine.setLocationFromBPartner(cbpl, !doc.isSOTrx());
 			factLine.setUser1_ID(DatevHelper.getDATEVRegionFromLocation( (doc.isSOTrx() ? factLine.getC_LocTo_ID() : factLine.getC_LocFrom_ID()), doc.getDateAcct()));
 			factLine.setUser2_ID(bxDatevType);
 			if (!Util.isEmpty(description))
